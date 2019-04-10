@@ -1,0 +1,285 @@
+\documentclass{tufte-book}
+\usepackage{graphicx}  % werken met figuren
+\usepackage{gensymb} % werken met wetenschappelijke eenheden\usepackage{geometry}
+\usepackage{changepage} % http://ctan.org/pkg/changepage
+\usepackage[dutch,british]{babel} % instelling van de taal (woordsplitsing, spellingscontrole)
+\usepackage[parfill]{parskip} % Paragrafen gescheiden door witte lijn en geen inspringing
+\usepackage[font=small,skip=3pt]{caption} % Minder ruimte tussen figuur/table en ondertitel. Ondertitel klein
+\usepackage{capt-of}
+\usepackage{indentfirst}
+\setlength{\parindent}{0.7cm}
+\usepackage{enumitem} % Laat enumerate werken met letters
+\usepackage{url}
+\usepackage{lipsum}
+\setkeys{Gin}{width=\linewidth,totalheight=\textheight,keepaspectratio}
+% Prints a trailing space in a smart way.
+\usepackage{xspace}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+\DeclareGraphicsExtensions{.pdf,.png,.jpg}
+
+% Alter some LaTeX defaults for better treatment of figures:
+% See p.105 of "TeX Unbound" for suggested values.
+% See pp. 199-200 of Lamport's "LaTeX" book for details.
+%   General parameters, for ALL pages:
+    \renewcommand{\topfraction}{0.9}	% max fraction of floats at top
+    \renewcommand{\bottomfraction}{0.9}	% max fraction of floats at bottom
+%   Parameters for TEXT pages (not float pages):
+    \setcounter{topnumber}{2}
+    \setcounter{bottomnumber}{2}
+    \setcounter{totalnumber}{4}     % 2 may work better
+    \renewcommand{\textfraction}{0.1}	% allow minimal text w. figs
+%   Parameters for FLOAT pages (not text pages):
+    \renewcommand{\floatpagefraction}{0.8}	% require fuller float pages
+% N.B.: floatpagefraction MUST be less than topfraction !!
+\setcounter{secnumdepth}{3}
+
+\newcommand{\tthdump}[1]{#1}
+
+\newcommand{\openepigraph}[2]{
+  \begin{fullwidth}
+  \sffamily\large
+    \begin{doublespace}
+      \noindent\allcaps{#1}\\ % epigraph
+      \noindent\allcaps{#2} % author
+    \end{doublespace}
+  \end{fullwidth}
+}
+
+
+\usepackage{makeidx}
+\makeindex
+
+\title{18-USDMXN}
+\author{Jan Trommelmans}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE,prefix.string=USDMXN}
+\setkeys{Gin}{width=1.1\marginparwidth} %% Sweave
+
+<<echo=FALSE>>=
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(broom)
+library(forecast)
+library(gridExtra)
+library(quantmod)
+@
+
+% Setting the ggplot theme:
+<<echo=FALSE>>=
+JT.theme <- theme(panel.border = element_rect(fill = NA, colour = "gray10"),
+                  panel.background = element_blank(),
+                  panel.grid.major = element_line(colour = "gray85"),
+                  panel.grid.minor = element_line(colour = "gray85"),
+                  panel.grid.major.x = element_line(colour = "gray85"),
+                  axis.text = element_text(size = 8 , face = "bold"),
+                  axis.title = element_text(size = 9 , face = "bold"),
+                  plot.title = element_text(size = 12 , face = "bold"),
+                  strip.text = element_text(size = 8 , face = "bold"),
+                  strip.background = element_rect(colour = "black"),
+                  legend.text = element_text(size = 8),
+                  legend.title = element_text(size = 9 , face = "bold"),
+                  legend.background = element_rect(fill = "white"),
+                  legend.key = element_rect(fill = "white"))
+@
+
+% Functions
+<<echo=FALSE>>=
+TRJ.FFT <- function(signal.df) {
+    # This function calculates the FFT for a time-series stored in a data frame with as first 
+    # column the time (or order of measurement) and as second column the vector of measurements.
+    # The result is a list. 
+    # The first element of the list is freqspec: the N frequencies plus for each frequency the 
+    # amplitude and phase.
+    # The second element of the list is resultaat: a data frame with those frequencies for which 
+    # the amplitude  is at least 33% of the maximum amplitude. 
+    # The data frame is sorted from highes amplitude to lowest. 
+    # This data frame can be seen as containing the most influential frequencies.
+    signal <- signal.df
+    names(signal) <- c("t","x")
+    N <- nrow(signal)
+    Ts <- as.numeric(signal$t[2]-signal$t[1])
+    Fs <- 1/Ts
+    # Calculation of the double sided en single sided spectrum
+    z <- fft(signal$x)
+    P2 <- Mod(z/N)
+    P1 <- P2[1:((N/2)+1)]
+    P1[2:(length(P1)-1)] <- 2*P1[2:(length(P1)-1)]
+    freq <- seq(0, (Fs/2)-(Fs/N), Fs/N)
+    freqspec <- data.frame(freq=freq,amp=P1[1:(N/2)],arg=Arg(z[1:(N/2)]))
+    # Finding the most important elements in the frequency spectrum
+    grens <- ifelse(freqspec$freq[freqspec$amp==max(freqspec$amp)]==0,max(freqspec$amp[2:nrow(freqspec)])/3,max(freqspec$amp)/3)
+    aantal <- length(freqspec$amp[freqspec$amp>grens])
+    resultaat <- data.frame(freq=rep(0,aantal), amp=rep(0,aantal), fasehoek=rep(0,aantal))
+    resultaat <- data.frame(freq=freqspec$freq[freqspec$amp>grens],
+                            amp=freqspec$amp[freqspec$amp>grens],
+                            fasehoek_pi=freqspec$arg[freqspec$amp>grens]/pi)
+    resultaat <- resultaat[order(-resultaat$amp),]
+    return(list("freqspec"=freqspec,"resultaat"=resultaat))
+}
+@
+
+<<echo=FALSE>>=
+grab.time.series <- function(datum) {
+  datum <- ymd(datum)
+  getSymbols("USD/MXN", src="oanda", missing = "remove")
+  value <- as.vector(USDMXN$USD.MXN)
+  tm.ser <- data.frame(i= seq(1, nrow(USDMXN), 1), date = index(USDMXN), value = value)
+  row.names(tm.ser) <- seq(1, nrow(tm.ser), 1)
+  tm.ser %>% dplyr::filter(date <= datum) -> tm.ser
+  # remove NA's
+  tm.ser <- tm.ser[rowSums(is.na(tm.ser))==0, ]
+  return(tm.ser)
+}
+@
+
+<<echo=FALSE>>=
+make.forecast <- function(datum) {
+# number of days to forecast
+N <- as.numeric(ymd("2019-11-29") - ymd(datum))
+# get the data limited to the present day
+tm.ser <- grab.time.series(datum)
+n <- nrow(tm.ser)
+# model based on linear regression on index
+mod1 <- lm(value ~ i, data = tm.ser)
+tm.ser$trend <- mod1$fitted.values
+forecast.mod1 <- data.frame(i = seq((n+1), (n+N), 1), fit = 0, lwr = 0, upr = 0)
+newdata <- data.frame(i = forecast.mod1$i)
+forecast.mod1[ ,2:4] <- as.data.frame(predict(mod1, newdata, interval = "prediction"))
+# model based on autoregression lag1
+mod2 <- lm(value[2:n] ~ 0 + value[1:(n-1)], data=tm.ser)
+tm.ser$mod2 <- rep(0, n)
+tm.ser$mod2[1] <- NA
+tm.ser$mod2[2:n] <- mod2$fitted.values
+mu <- mean(mod2$residuals)
+sigma <- sd(mod2$residuals)
+forecast.mod2 <- data.frame(i = seq((n+1), (n+N), 1), fit = 0, lwr = 0, upr = 0)
+forecast.mod2$fit[1] <- tm.ser$value[n]*tidy(mod2)$estimate
+forecast.mod2$lwr[1] <- forecast.mod2$fit[1] - 1.96*sigma
+forecast.mod2$upr[1] <- forecast.mod2$fit[1] + 1.96*sigma
+for (j in seq(2, N, 1)) {
+  forecast.mod2$fit[j] <- forecast.mod2$fit[j-1]*tidy(mod2)$estimate
+  forecast.mod2$lwr[j] <- forecast.mod2$fit[j] - 1.96*sqrt(j)*sigma
+  forecast.mod2$upr[j] <- forecast.mod2$fit[j] + 1.96*sqrt(j)*sigma
+}
+p1 <- ggplot() +
+    geom_point(data = tm.ser, aes(x = i, y = value), size = 1, color = "red") +
+    geom_line(data = tm.ser, aes(x = i, y = trend), color = "blue") +
+    geom_line(data = tm.ser, aes(x = i, y = mod2), color = "black") +
+    geom_line(data = forecast.mod1, aes(x = i, y= fit), color = "blue") +
+    geom_ribbon(data = forecast.mod1, aes(x = i, ymin = lwr, ymax = upr), fill = "blue", alpha=0.3) +
+    geom_line(data = forecast.mod2, aes(x = i, y= fit), color = "black") +
+    geom_ribbon(data = forecast.mod2, aes(x = i, ymin = lwr, ymax = upr), fill = "black", alpha=0.3) +
+    labs(title = "USDMXN", x = "index", y="USDMXN") +
+    scale_y_continuous(limits = c(15, 25)) +
+    JT.theme
+list(p1, mod1, mod2)
+}
+@
+
+\frontmatter
+\chapter*{What will be the end-of-day closing value for the U.S. dollar against the Mexican peso on 29 November 2019?}
+
+\mainmatter
+
+\chapter{18-USDMEX}
+
+\section{Initial conditions}
+
+\subsection{Start and end date}
+
+<<>>=
+start <- ymd("2019-04-04")
+end <- ymd("2019-05-24")
+@
+
+\subsection{Reading the time series on 2019-04-10}
+
+<<label=startgrafiek, fig=TRUE, include=FALSE, echo=FALSE>>=
+tm.ser <- grab.time.series("2019-04-10")
+ggplot(data = tm.ser, aes(x =date)) +
+    geom_line(aes(y = value), size = 0.35, color="red") +
+    labs(title = "USDMXN", x = "date", y="USDMXN") +
+    scale_y_continuous(limits = c(15, 25)) +
+    JT.theme
+@
+  
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-startgrafiek}
+\caption{}
+\label{fig:startgrafiek}
+\setfloatalignment{b}
+\end{figure}
+
+\newpage
+\section{Forecasts}
+
+\subsection{2019-04-09}
+
+<<label=forecast1, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-04-09")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast1}
+\caption{}
+\label{fig:forecast1}
+\setfloatalignment{b}
+\end{figure}
+
+Linear regression model (mod1):
+<<>>=
+tidy(fcst[[2]])
+glance(fcst[[2]])
+@
+
+Autoregression model (mod2):
+<<>>=
+tidy(fcst[[3]])
+glance(fcst[[3]])
+@
+
+\subsection{2019-04-10}
+
+<<label=forecast2, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-04-10")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast2}
+\caption{}
+\label{fig:forecast2}
+\setfloatalignment{b}
+\end{figure}
+
+Linear regression model (mod1):
+<<>>=
+tidy(fcst[[2]])
+glance(fcst[[2]])
+@
+
+Autoregression model (mod2):
+<<>>=
+tidy(fcst[[3]])
+glance(fcst[[3]])
+@
+
+
+\printindex
+
+\newpage
+
+\textbf{Thanks} \\
+\medskip
+R Core Team (2018). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+\medskip
+<<>>=
+sessionInfo()
+@
+
+\end{document}
