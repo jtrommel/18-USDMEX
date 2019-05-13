@@ -165,6 +165,9 @@ for (j in seq(2, N, 1)) {
   forecast.mod2$lwr[j] <- forecast.mod2$fit[j] - 1.96*sqrt(j)*sigma
   forecast.mod2$upr[j] <- forecast.mod2$fit[j] + 1.96*sqrt(j)*sigma
 }
+mu.end <- forecast.mod2$fit[N]
+sigma.end <- sqrt(N)*sigma
+my.title <- paste ("USDMXN on", datum, sep = " ", collapse = NULL) 
 p1 <- ggplot() +
     geom_point(data = tm.ser, aes(x = i, y = value), size = 1, color = "red") +
     geom_line(data = tm.ser, aes(x = i, y = trend), color = "blue") +
@@ -173,10 +176,22 @@ p1 <- ggplot() +
     geom_ribbon(data = forecast.mod1, aes(x = i, ymin = lwr, ymax = upr), fill = "blue", alpha=0.3) +
     geom_line(data = forecast.mod2, aes(x = i, y= fit), color = "black") +
     geom_ribbon(data = forecast.mod2, aes(x = i, ymin = lwr, ymax = upr), fill = "black", alpha=0.3) +
-    labs(title = "USDMXN", x = "index", y="USDMXN") +
+    ggtitle(my.title) +
+    labs(x = "index", y="USDMXN") +
     scale_y_continuous(limits = c(15, 25)) +
     JT.theme
-list(p1, mod1, mod2)
+list(p1, mod1, mod2, mu.end, sigma.end)
+}
+@
+
+<<echo=FALSE>>=
+answer <- function(limits, mu, sigma) {
+  p1 <- round(100*pnorm(limits[1], mu, sigma), 2)
+  p2 <- round(100*(pnorm(limits[2], mu, sigma) - pnorm(limits[1], mu, sigma)),2)
+  p3 <- round(100*(pnorm(limits[3], mu, sigma) - pnorm(limits[2], mu, sigma)),2)
+  p4 <- round(100*(pnorm(limits[4], mu, sigma) - pnorm(limits[3], mu, sigma)),2)
+  p5 <- round(100*(1- pnorm(limits[4], mu, sigma)),2)
+  return(c(p1, p2, p3, p4, p5))
 }
 @
 
@@ -185,15 +200,23 @@ list(p1, mod1, mod2)
 
 \mainmatter
 
-\chapter{18-USDMEX}
+\chapter{18-USDMXN}
 
 \section{Initial conditions}
 
-\subsection{Start and end date}
+\subsection{Question}
 
-<<>>=
-start <- ymd("2019-04-04")
-end <- ymd("2019-05-24")
+What is the probability that on 2019-11-24 the end-of-day closing value for the U.S. dollar against the Mexican peso (USDMXN) will be:
+\begin{itemize}
+	\item lower than 17.5000
+	\item between 17.5000 and 18.5000
+	\item between 18.5000 and 19.5000
+	\item between 19.5000 and 20.5000
+	\item higher than 20.5000
+\end{itemize}
+
+<<echo=FALSE>>=
+limits <- c(17.5000, 18.5000, 19.5000, 20.5000)
 @
 
 \subsection{Reading the time series on 2019-04-10}
@@ -231,17 +254,24 @@ fcst[[1]]
 \setfloatalignment{b}
 \end{figure}
 
-Linear regression model (mod1):
-<<>>=
-tidy(fcst[[2]])
-glance(fcst[[2]])
-@
 
 Autoregression model (mod2):
 <<>>=
 tidy(fcst[[3]])
 glance(fcst[[3]])
 @
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
 
 \subsection{2019-04-10}
 
@@ -257,17 +287,151 @@ fcst[[1]]
 \setfloatalignment{b}
 \end{figure}
 
-Linear regression model (mod1):
+Autoregression model (mod2):
 <<>>=
-tidy(fcst[[2]])
-glance(fcst[[2]])
+tidy(fcst[[3]])
+glance(fcst[[3]])
 @
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
+
+\subsection{2019-04-19}
+
+<<label=forecast3, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-04-19")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast3}
+\caption{}
+\label{fig:forecast3}
+\setfloatalignment{b}
+\end{figure}
 
 Autoregression model (mod2):
 <<>>=
 tidy(fcst[[3]])
 glance(fcst[[3]])
 @
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
+
+\subsection{2019-04-28}
+
+<<label=forecast4, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-04-28")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast4}
+\caption{}
+\label{fig:forecast4}
+\setfloatalignment{b}
+\end{figure}
+
+Autoregression model (mod2):
+<<>>=
+tidy(fcst[[3]])
+glance(fcst[[3]])
+@
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
+
+\subsection{2019-05-05}
+
+<<label=forecast5, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-05-05")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast5}
+\caption{}
+\label{fig:forecast5}
+\setfloatalignment{b}
+\end{figure}
+
+Autoregression model (mod2):
+<<>>=
+tidy(fcst[[3]])
+glance(fcst[[3]])
+@
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
+
+\subsection{2019-05-12}
+
+<<label=forecast6, fig=TRUE, include=FALSE, echo=FALSE>>=
+fcst <- make.forecast("2019-05-12")
+fcst[[1]]
+@
+
+\begin{figure}
+\includegraphics[width=0.85\textwidth]{USDMXN-forecast6}
+\caption{}
+\label{fig:forecast6}
+\setfloatalignment{b}
+\end{figure}
+
+Autoregression model (mod2):
+<<>>=
+tidy(fcst[[3]])
+glance(fcst[[3]])
+@
+
+<<echo=FALSE>>=
+prob <- signif(answer(limits, fcst[[4]], fcst[[5]]), digits = 2)
+@
+
+\begin{tabular}{l r l}
+  lower than 17.5000 & \Sexpr{prob[1]} & \% \\
+  between 17.5000 and 18.5000 & \Sexpr{prob[2]} & \% \\
+  between 18.5000 and 19.5000 & \Sexpr{prob[3]} & \% \\
+  between 19.5000 and 20.5000 & \Sexpr{prob[4]} & \% \\
+  higher than 20.5000 & \Sexpr{prob[5]} & \% 
+\end{tabular}
 
 
 \printindex
